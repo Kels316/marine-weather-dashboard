@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase Zero — Marine Weather</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="../SAR-calculator/tide-db.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap');
+
+:root {
+  --bg:     #f2f2f2;
+  --panel:  #ffffff;
+  --border: #dde0e4;
+  --accent: #f01400;
+  --accent2:#f77f00;
+  --danger: #cc1100;
+  --ok:     #1a9e3f;
+  --text:   #1a1a1a;
+  --muted:  #7a8a96;
+  --label:  #4a5a68;
+  --mono:   'Share Tech Mono', monospace;
+  --sans:   'Barlow Condensed', sans-serif;
+  --body:   'Barlow', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 14px;
+  height: 100%;
+}
+
+/* ── HEADER ── */
+header {
+  background: #111;
+  border-bottom: 2px solid var(--accent);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 300;
+  height: 58px;
+}
+header h1 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #fff;
+}
+header h1 span { color: var(--accent); }
+.header-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #666;
+  letter-spacing: 1px;
+  margin-top: 1px;
+}
+.header-right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#utcClock {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #999;
+  letter-spacing: 1px;
+}
+.badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border: 1px solid #333;
+  border-radius: 2px;
+  color: #666;
+  letter-spacing: 1px;
+}
+
+/* ── LAYOUT ── */
+.app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: calc(100vh - 58px);
+  overflow: hidden;
+}
+
+/* ── LEFT PANEL ── */
+.inputs-panel {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#map {
+  flex: 1 1 0;
+  min-height: 0;
+  z-index: 1;
+  border-bottom: 2px solid var(--accent);
+}
+
+.inputs-scroll {
+  flex: 0 0 auto;
+  overflow-y: auto;
+  max-height: 44vh;
+}
+
+/* ── STEPS — exact SAR calc pattern ── */
+.step { border-bottom: 1px solid var(--border); }
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.step-header:hover { background: rgba(240,20,0,0.04); }
+.step-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.step.open .step-num { opacity: 1; }
+.step-title {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--label);
+}
+.step.open .step-title { color: var(--accent); }
+.step-chevron {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+.step.open .step-chevron { transform: rotate(180deg); }
+.step-body { display: none; padding: 4px 18px 16px; }
+.step.open .step-body { display: block; }
+
+/* ── FORM — exact SAR calc pattern ── */
+.field { margin-top: 10px; }
+.field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.field label span.unit { color: var(--accent); font-size: 9px; margin-left: 4px; }
+.field input[type=text],
+.field input[type=number],
+.field select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.field select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a8a96' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+  background-color: var(--bg);
+}
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.field-hint { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+/* ── BUTTONS ── */
+.load-btn-wrap { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.load-btn {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.load-btn:hover { background: #c91200; }
+.load-btn:active { transform: scale(0.98); }
+.clear-btn {
+  width: 100%;
+  margin-top: 6px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.clear-btn:hover { color: var(--text); border-color: var(--muted); }
+.geo-btn {
+  width: 100%;
+  margin-top: 8px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.geo-btn:hover { background: rgba(240,20,0,0.05); }
+
+/* ── SPINNER ── */
+.spinner-wrap { padding: 18px; text-align: center; display: none; }
+.spinner-wrap.visible { display: block; }
+.spinner {
+  display: inline-block;
+  width: 22px; height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-top: 6px; }
+
+/* ── RIGHT PANEL ── */
+.results-panel {
+  overflow-y: auto;
+  padding: 20px 24px;
+  background: var(--bg);
+}
+
+.placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-align: center;
+}
+.placeholder-icon { font-size: 48px; opacity: 0.2; }
+.placeholder p { opacity: 0.5; }
+
+/* ── RESULT SECTIONS — exact SAR calc pattern ── */
+.result-section {
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--panel);
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.result-section-header {
+  background: rgba(240,20,0,0.05);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.badge-sm {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.6;
+  margin-left: auto;
+}
+
+.result-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.result-grid.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+.result-grid.cols4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+.kv {
+  padding: 10px 14px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.kv:nth-child(2n)  { border-right: none; }
+.result-grid.cols3 .kv:nth-child(3n) { border-right: none; }
+.result-grid.cols3 .kv:nth-child(2n) { border-right: 1px solid var(--border); }
+.result-grid.cols3 .kv:nth-child(3n) { border-right: none; }
+.result-grid.cols4 .kv:nth-child(2n) { border-right: 1px solid var(--border); }
+.result-grid.cols4 .kv:nth-child(4n) { border-right: none; }
+.kv.full { grid-column: 1/-1; border-right: none; }
+
+.kv-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.kv-value { font-family: var(--mono); font-size: 14px; color: var(--text); }
+.kv-value.big { font-size: 18px; font-weight: bold; }
+.kv-value.accent { color: var(--accent); }
+.kv-value.orange { color: var(--accent2); }
+.kv-value.green  { color: var(--ok); }
+.kv-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.tide-disclaimer {
+  padding: 7px 14px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  letter-spacing: 0.5px;
+}
+
+/* ── CHART WRAP ── */
+.chart-wrap {
+  position: relative;
+  height: 200px;
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  .chart-wrap { height: 180px; }
+}
+#tideChart, #currentChart {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* ── WARNINGS LINK ── */
+.bom-link-wrap { padding: 10px 14px; }
+.bom-link {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 7px 14px;
+  text-decoration: none;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+}
+.bom-link:hover { background: rgba(240,20,0,0.05); }
+
+/* ── ERROR ── */
+.error-box {
+  background: rgba(220,30,10,0.07);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--danger);
+  margin-bottom: 14px;
+  display: none;
+}
+.error-box.visible { display: block; }
+
+/* ── WX METRICS PANEL ── */
+#wxMetrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.wx-metric {
+  padding: 10px 14px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+#wxMetrics .wx-metric:nth-child(3n) { border-right: none; }
+.wx-metric.full { grid-column: 1 / -1; border-right: none; }
+.wx-metric-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.wx-metric-value {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+}
+.wx-metric-value.big { font-size: 18px; font-weight: bold; }
+.wx-metric-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.warn-none   { color: var(--muted); }
+.warn-wind   { color: #f0a500; }
+.warn-gale   { color: #e07000; }
+.warn-storm  { color: #d04000; }
+.warn-hurr   { color: #c00000; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  html, body { height: auto; overflow: auto; }
+  .app { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  .inputs-panel { height: auto; overflow: visible; }
+  #map { height: 260px; flex: none; min-height: unset; }
+  .inputs-scroll { max-height: none; overflow: visible; }
+  .results-panel { overflow: visible; padding: 14px; }
+  .result-grid.cols3 { grid-template-columns: 1fr 1fr; }
+  .result-grid.cols4 { grid-template-columns: 1fr 1fr; }
+  .result-grid.cols3 .kv:nth-child(2n) { border-right: none; }
+  .result-grid.cols3 .kv:nth-child(3n) { border-right: 1px solid var(--border); }
+  .result-grid.cols4 .kv:nth-child(2n) { border-right: none; }
+  .result-grid.cols4 .kv:nth-child(4n) { border-right: 1px solid var(--border); }
+  #wxMetrics { grid-template-columns: 1fr 1fr; }
+  #wxMetrics .wx-metric:nth-child(3n) { border-right: 1px solid var(--border); }
+  #wxMetrics .wx-metric:nth-child(2n) { border-right: none; }
+  .chart-wrap canvas { max-height: 220px; }
+  header { padding: 10px 14px; }
+  header h1 { font-size: 16px; }
+  .header-sub { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Phase <span>Zero</span> — Marine Weather</h1>
+    <div class="header-sub">LIVE CONDITIONS · OPEN-METEO &amp; BOM</div>
+  </div>
+  <div class="header-right">
+    <span id="utcClock">—</span>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- ═══ LEFT: INPUTS ═══ -->
+  <div class="inputs-panel">
+
+    <div id="map"></div>
+
+    <div class="inputs-scroll">
+
+      <!-- Step 1: Location -->
+      <div class="step open" id="step1">
+        <div class="step-header" onclick="toggleStep('step1')">
+          <div class="step-num">1</div>
+          <div class="step-title">Location</div>
+          <div class="step-chevron">▼</div>
+        </div>
+        <div class="step-body">
+          <div class="field">
+            <label>Latitude <span class="unit">tap map or enter below</span></label>
+            <input type="text" id="inp_lat" placeholder="-27.4698  or  27 28.188 S">
+            <div class="field-hint">Decimal, DM or DMS · N/S/E/W suffix ok</div>
+          </div>
+          <div class="field">
+            <label>Longitude</label>
+            <input type="text" id="inp_lon" placeholder="153.0243  or  153 01.455 E">
+          </div>
+          <button class="geo-btn" onclick="useMyLocation()">📍 Use My Location</button>
+        </div>
+      </div>
+
+      <!-- Load -->
+      <div class="load-btn-wrap">
+        <button class="load-btn" onclick="loadData()">⬡ Load Conditions</button>
+        <button class="clear-btn" onclick="clearAll()">Clear</button>
+      </div>
+
+      <!-- Spinner -->
+      <div class="spinner-wrap" id="spinner">
+        <div class="spinner"></div>
+        <div class="spinner-label">FETCHING DATA…</div>
+      </div>
+
+    </div><!-- /inputs-scroll -->
+  </div><!-- /inputs-panel -->
+
+  <!-- ═══ RIGHT: RESULTS ═══ -->
+  <div class="results-panel" id="resultsPanel">
+
+    <div class="placeholder" id="placeholder">
+      <div class="placeholder-icon">🌊</div>
+      <p>TAP THE MAP OR ENTER COORDINATES</p>
+      <p>THEN PRESS LOAD CONDITIONS</p>
+    </div>
+
+    <div id="errorBox" class="error-box"></div>
+
+    <div id="results" style="display:none">
+
+      <!-- Live Conditions (wx metrics) -->
+      <div class="result-section">
+        <div class="result-section-header">◎ Live Conditions
+          <span id="cond_time" style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;letter-spacing:0.5px"></span>
+        </div>
+        <div id="wxMetrics">
+          <!-- populated by renderWeatherPanel() -->
+        </div>
+      </div>
+
+      <!-- Tides -->
+      <div class="result-section">
+        <div class="result-section-header" id="tide_header">🌊 Tides — Next 48 Hours</div>
+        <div class="chart-wrap">
+          <canvas id="tideChart"></canvas>
+        </div>
+        <div class="tide-disclaimer">⚠ Modelled tidal data (MSL reference) · Not for coastal navigation</div>
+      </div>
+
+    </div><!-- /results -->
+  </div><!-- /results-panel -->
+
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════
+// PARSE LAT/LON  — exact copy from SAR calculator
+// ═══════════════════════════════════════════
+function parseLatLon(raw) {
+  raw = raw.trim().toUpperCase();
+  let hemi = null;
+  for (const ch of ['N','S','E','W']) {
+    if (raw.includes(ch)) { hemi = ch; raw = raw.replace(ch, ' '); break; }
+  }
+  const parts = raw.split(/[\s,°'"]+/).filter(Boolean).map(Number).filter(v => !isNaN(v));
+  let val;
+  if (parts.length === 1) {
+    val = parts[0]; // sign already correct for plain decimal (e.g. -27.46980)
+  } else if (parts.length === 2) {
+    val = Math.abs(parts[0]) + parts[1]/60;
+    if (parts[0] < 0) val = -val;
+  } else if (parts.length >= 3) {
+    val = Math.abs(parts[0]) + parts[1]/60 + parts[2]/3600;
+    if (parts[0] < 0) val = -val;
+  } else throw new Error('Cannot parse: ' + raw);
+  if (hemi === 'S' || hemi === 'W') val = -Math.abs(val);
+  if (hemi === 'N' || hemi === 'E') val =  Math.abs(val);
+  return val;
+}
+
+// ═══════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════
+const CARDS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+function degToCard(d) { return CARDS[Math.round(((d%360)+360)%360/22.5)%16]; }
+
+const BEAUFORT_BOUNDS = [1,3,6,10,16,21,27,33,40,47,55,63,999];
+const BEAUFORT_DESCS  = ['Calm','Light air','Light breeze','Gentle breeze','Mod. breeze',
+  'Fresh breeze','Strong breeze','Near gale','Gale','Severe gale','Storm','Violent storm','Hurricane'];
+function bfNum(kn) { return BEAUFORT_BOUNDS.findIndex(b => kn <= b); }
+function bfDesc(kn) { const i = bfNum(kn); return `BF${i} ${BEAUFORT_DESCS[i]}`; }
+function bfColor(kn) {
+  const i = bfNum(kn);
+  if (i <= 3) return '#1a9e3f';
+  if (i <= 5) return '#85bb2f';
+  if (i === 6) return '#e0c000';
+  if (i === 7) return '#f77f00';
+  return '#f01400';
+}
+
+const WMO_CODES = {
+  0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Fog',48:'Icy fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',
+  80:'Showers',81:'Showers',82:'Heavy showers',95:'Thunderstorm',99:'Storm/hail'
+};
+function wmoDesc(c) { return WMO_CODES[c] || `Code ${c}`; }
+
+function fmtHt(m) {
+  return m != null ? `${m.toFixed(1)} m` : '—';
+}
+
+// ═══════════════════════════════════════════
+// UTC CLOCK
+// ═══════════════════════════════════════════
+function tickClock() {
+  const n = new Date();
+  const pad = x => String(x).padStart(2,'0');
+  document.getElementById('utcClock').textContent =
+    `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+}
+setInterval(tickClock, 1000); tickClock();
+
+// ═══════════════════════════════════════════
+// MAP  — Leaflet, always visible
+// ═══════════════════════════════════════════
+let map, marker;
+
+function initMap() {
+  map = L.map('map', { zoomControl: true }).setView([-27.47, 153.02], 5);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 19
+  }).addTo(map);
+  map.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
+}
+
+function placeMarker(lat, lon, zoom) {
+  if (marker) map.removeLayer(marker);
+  const icon = L.divIcon({
+    html: '<div style="width:12px;height:12px;background:#f01400;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',
+    className: '', iconAnchor: [6,6]
+  });
+  marker = L.marker([lat, lon], { icon, draggable: true }).addTo(map);
+  marker.on('drag', e => setCoords(e.latlng.lat, e.latlng.lng));
+  marker.on('dragend', e => { setCoords(e.target.getLatLng().lat, e.target.getLatLng().lng); });
+  setCoords(lat, lon);
+  map.setView([lat, lon], zoom ?? Math.max(map.getZoom(), 8));
+}
+
+function setCoords(lat, lon) {
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lon >= 0 ? 'E' : 'W';
+  document.getElementById('inp_lat').value = `${Math.abs(lat).toFixed(5)} ${ns}`;
+  document.getElementById('inp_lon').value = `${Math.abs(lon).toFixed(5)} ${ew}`;
+}
+
+function useMyLocation() {
+  if (!navigator.geolocation) { showError('Geolocation not supported by this browser.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      placeMarker(lat, lon, 10);
+    },
+    err => showError('Could not get location: ' + err.message)
+  );
+}
+
+document.addEventListener('DOMContentLoaded', initMap);
+
+// ═══════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════
+function toggleStep(id) { document.getElementById(id).classList.toggle('open'); }
+
+function destroyCharts() {
+  const c = document.getElementById('tideChart');
+  if (c) { c._tideData = null; c.getContext('2d').clearRect(0, 0, c.width, c.height); }
+}
+
+function showError(msg) {
+  const b = document.getElementById('errorBox');
+  b.textContent = '⚠  ' + msg;
+  b.classList.add('visible');
+}
+function clearError() { document.getElementById('errorBox').classList.remove('visible'); }
+function spin(on) { document.getElementById('spinner').classList.toggle('visible', on); }
+
+function clearAll() {
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('placeholder').style.display = 'flex';
+  clearError();
+  destroyCharts();
+}
+
+// ═══════════════════════════════════════════
+// AUSTRALIAN STATE DETECTION
+// ═══════════════════════════════════════════
+function detectState(lat, lon) {
+  if (lat>-29 && lat<-10 && lon>137 && lon<154) return 'QLD';
+  if (lat>-37.5 && lat<-28 && lon>149 && lon<154) return 'NSW';
+  if (lat>-39 && lat<-34 && lon>140 && lon<150) return 'VIC';
+  if (lat>-38 && lat<-32 && lon>129 && lon<141) return 'SA';
+  if (lat>-35 && lat<-13 && lon>112 && lon<130) return 'WA';
+  if (lat>-44 && lat<-39 && lon>144 && lon<149) return 'TAS';
+  if (lat>-26 && lat<-10 && lon>129 && lon<138) return 'NT';
+  return null;
+}
+const BOM_URLS = {
+  QLD: 'https://www.bom.gov.au/qld/marine/',
+  NSW: 'https://www.bom.gov.au/nsw/marine/',
+  VIC: 'https://www.bom.gov.au/vic/marine/',
+  SA:  'https://www.bom.gov.au/sa/marine/',
+  WA:  'https://www.bom.gov.au/wa/marine/',
+  TAS: 'https://www.bom.gov.au/tas/marine/',
+  NT:  'https://www.bom.gov.au/nt/marine/',
+};
+
+// ═══════════════════════════════════════════
+// FETCH
+// ═══════════════════════════════════════════
+async function fetchMarine(lat, lon) {
+  const cur = 'ocean_current_velocity,ocean_current_direction,wave_height,wave_direction,' +
+    'wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,sea_surface_temperature';
+  const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}` +
+    `&current=${cur}&velocity_unit=knots&cell_selection=sea`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Marine API ${r.status}`);
+  return r.json();
+}
+
+async function fetchWind(lat, lon) {
+  const cur = 'wind_speed_10m,wind_direction_10m,wind_gusts_10m,' +
+    'temperature_2m,apparent_temperature,surface_pressure,relative_humidity_2m,' +
+    'cloud_cover,visibility,weather_code';
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&current=${cur}&wind_speed_unit=kn`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Forecast API ${r.status}`);
+  const d = await r.json();
+  if (d.error) throw new Error(d.reason || 'Forecast API error');
+  d._model = 'Open-Meteo';
+  return d;
+}
+
+// ═══════════════════════════════════════════
+// LOAD
+// ═══════════════════════════════════════════
+async function loadData() {
+  clearError();
+  let lat, lon;
+  try {
+    lat = parseLatLon(document.getElementById('inp_lat').value);
+    lon = parseLatLon(document.getElementById('inp_lon').value);
+  } catch(e) { showError('Invalid coordinates — tap the map or enter lat/lon manually.'); return; }
+  if (isNaN(lat)||isNaN(lon)||lat<-90||lat>90||lon<-180||lon>180) {
+    showError('Coordinates out of range.'); return;
+  }
+
+  placeMarker(lat, lon);
+
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('results').style.display     = 'none';
+  spin(true);
+  destroyCharts();
+
+  try {
+    const [marine, wind, warnings] = await Promise.all([
+      fetchMarine(lat,lon),
+      fetchWind(lat,lon),
+      fetchBOMWarnings(lat,lon)
+    ]);
+    spin(false);
+    renderAll(lat, lon, marine, wind, warnings);
+  } catch(e) {
+    spin(false);
+    showError('Failed to load: ' + e.message);
+    document.getElementById('placeholder').style.display = 'flex';
+  }
+}
+
+// ═══════════════════════════════════════════
+// WAVE HEIGHT → SEA STATE (Douglas scale)
+// ═══════════════════════════════════════════
+function waveHeightToSeaState(h) {
+  if (h === null || h === undefined) return 'Unknown';
+  if (h <  0.1)  return 'Sea State 0 — Calm (glassy)';
+  if (h <  0.5)  return 'Sea State 1–2 — Calm / Smooth';
+  if (h <  1.25) return 'Sea State 3 — Slight';
+  if (h <  2.5)  return 'Sea State 4 — Moderate';
+  if (h <  4.0)  return 'Sea State 5 — Rough';
+  if (h <  6.0)  return 'Sea State 6 — Very Rough';
+  if (h <  9.0)  return 'Sea State 7 — High';
+  if (h < 14.0)  return 'Sea State 8 — Very High';
+  return              'Sea State 9 — Phenomenal';
+}
+
+// ═══════════════════════════════════════════
+// BOM WARNINGS
+// ═══════════════════════════════════════════
+function encodeGeohash(lat, lon, precision = 6) {
+  const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+  let idx = 0, bit = 0, evenBit = true, geohash = '';
+  let minLat = -90, maxLat = 90, minLon = -180, maxLon = 180;
+  while (geohash.length < precision) {
+    if (evenBit) {
+      const mid = (minLon + maxLon) / 2;
+      if (lon >= mid) { idx = idx * 2 + 1; minLon = mid; }
+      else            { idx = idx * 2;     maxLon = mid; }
+    } else {
+      const mid = (minLat + maxLat) / 2;
+      if (lat >= mid) { idx = idx * 2 + 1; minLat = mid; }
+      else            { idx = idx * 2;     maxLat = mid; }
+    }
+    evenBit = !evenBit;
+    if (++bit === 5) { geohash += BASE32[idx]; bit = 0; idx = 0; }
+  }
+  return geohash;
+}
+
+function parseBOMSeverity(html) {
+  if (!html) return null;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  const order = ['hurricane force', 'storm force', 'gale', 'strong wind'];
+  let highest = null;
+  for (const b of div.querySelectorAll('b')) {
+    const text = b.textContent.toLowerCase();
+    for (const sev of order) {
+      if (text.includes(sev)) {
+        const idx = order.indexOf(sev);
+        if (highest === null || idx < order.indexOf(highest)) highest = sev;
+        break;
+      }
+    }
+  }
+  return highest;
+}
+
+async function fetchBOMWarnings(lat, lon) {
+  try {
+    const geohash = encodeGeohash(lat, lon, 6);
+    const warnResp = await fetch(
+      `https://api.weather.bom.gov.au/v1/locations/${geohash}/warnings`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    if (!warnResp.ok) return null;
+    const warnData = await warnResp.json();
+    const list = warnData?.data ?? [];
+    return await Promise.all(list.map(async w => {
+      let severity = w.warning_group_type ?? '';
+      try {
+        const det = await fetch(
+          `https://api.weather.bom.gov.au/v1/warnings/${w.id}`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        if (det.ok) {
+          const detData = await det.json();
+          const msg = detData?.data?.message ?? detData?.data?.[0]?.message ?? '';
+          const parsed = parseBOMSeverity(msg);
+          if (parsed) severity = parsed;
+        }
+      } catch (_) {}
+      return {
+        short_title: w.short_title ?? w.title ?? 'Warning',
+        type:        w.type ?? '',
+        severity,
+      };
+    }));
+  } catch (e) {
+    console.warn('[BOM] warnings fetch failed:', e.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
+// RENDER ALL
+// ═══════════════════════════════════════════
+function renderAll(lat, lon, marine, wind, warnings) {
+  const mc = marine.current;
+  const wc = wind.current;
+
+  // Header — fetch timestamp
+  const fetchTime = new Date();
+  document.getElementById('cond_time').textContent =
+    'correct as at: ' + fetchTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+  renderWeatherPanel(mc, wc, warnings);
+  renderTides(lat, lon);
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('resultsPanel').scrollTop = 0;
+}
+
+// ═══════════════════════════════════════════
+// WEATHER PANEL
+// ═══════════════════════════════════════════
+function renderWeatherPanel(mc, wc, warnings) {
+  const n  = (v, dec, unit) => (v !== null && v !== undefined && isFinite(v)) ? `${v.toFixed(dec)}${unit}` : '—';
+  const deg = v => (v !== null && v !== undefined && isFinite(v)) ? `${Math.round(v)}°T` : '—';
+  const kn  = v => (v !== null && v !== undefined && isFinite(v)) ? `${Math.round(v)} kn` : '—';
+
+  const ws = wc.wind_speed_10m, wd = wc.wind_direction_10m, wg = wc.wind_gusts_10m;
+  const waveH = mc.wave_height, waveD = mc.wave_direction, waveP = mc.wave_period;
+  const swellH = mc.swell_wave_height, swellD = mc.swell_wave_direction, swellP = mc.swell_wave_period;
+  const sst = mc.sea_surface_temperature;
+  const cv = mc.ocean_current_velocity, cd = mc.ocean_current_direction;
+  const airT = wc.temperature_2m, feelsT = wc.apparent_temperature;
+  const pressure = wc.surface_pressure, humidity = wc.relative_humidity_2m;
+  const cloud = wc.cloud_cover, visibM = wc.visibility, wxCode = wc.weather_code;
+
+  const visKm = visibM != null ? (visibM / 1000).toFixed(1) + ' km' : '—';
+
+  // Beaufort color on wind speed value
+  const wsColor = ws != null ? bfColor(ws) : 'var(--text)';
+
+  // Swell description
+  const swellDesc = (() => {
+    if (!swellH || !swellP) return '';
+    const T = swellP, h = swellH;
+    if (h < 2) return T < 11 ? 'Low swell, short/avg length' : 'Long, low swell';
+    if (h < 4) {
+      const L = 1.56 * T * T;
+      if (L < 100)          return 'Short swell, moderate height';
+      if (T >= 8 && T < 11) return 'Avg swell, moderate height';
+      return 'Long swell, moderate height';
+    }
+    const L = 1.56 * T * T;
+    if (L < 100)          return 'Short heavy swell';
+    if (T >= 8 && T < 11) return 'Avg length heavy swell';
+    return 'Long heavy swell';
+  })();
+
+  // Warnings
+  const sevColor = { 'strong wind':'#f0a500','gale':'#e07000','storm force':'#d04000','hurricane force':'#c00000','minor':'#f0a500','major':'#d04000' };
+  const sevLabel = { 'strong wind':'Strong Wind Warning','gale':'Gale Warning','storm force':'Storm Force Warning','hurricane force':'Hurricane Force Warning','minor':'Marine Wind Warning','major':'Marine Wind Warning' };
+  let warnHtml = '<span class="warn-none">None active</span>';
+  if (warnings !== null && warnings !== undefined) {
+    const marine = (warnings ?? []).filter(w =>
+      /marine|coastal|wind|gale|storm|swell|sea|surf|flood|tsunami/i.test((w.short_title ?? '') + ' ' + (w.type ?? ''))
+    );
+    if (marine.length > 0) {
+      const col = sevColor[marine[0].severity] ?? 'var(--accent2)';
+      const txt = marine.map(w => sevLabel[w.severity] ?? w.short_title ?? 'Marine Warning').join(' · ');
+      warnHtml = `<span style="color:${col}">${txt}</span>`;
+    }
+  } else {
+    warnHtml = '<span class="warn-none">API unavailable</span>';
+  }
+
+  function cell(label, value, sub, extraStyle) {
+    return `<div class="wx-metric"${extraStyle ? ` style="${extraStyle}"` : ''}>
+      <div class="wx-metric-label">${label}</div>
+      <div class="wx-metric-value">${value}</div>
+      ${sub ? `<div class="wx-metric-sub">${sub}</div>` : ''}
+    </div>`;
+  }
+
+  const windSub = [
+    wd != null ? `from ${deg(wd)} ${degToCard(wd)}` : '',
+    wg != null ? `gust ${Math.round(wg)} kn` : '',
+    ws != null ? bfDesc(ws) : ''
+  ].filter(Boolean).join('<br>');
+
+  const waveDir  = waveD  != null ? `from ${deg(waveD)} ${degToCard(waveD)}` : '';
+  const waveSub  = [waveDir, waveP != null ? `${Math.round(waveP)} s period` : '', waveHeightToSeaState(waveH)].filter(Boolean).join('<br>');
+  const swellDir = swellD != null ? `from ${deg(swellD)} ${degToCard(swellD)}` : '';
+  const swellSub = [swellDir, swellP != null ? `${Math.round(swellP)} s period` : '', swellDesc].filter(Boolean).join('<br>');
+  const curSub   = cd != null ? `from ${deg(cd)} ${degToCard(cd)}` : '';
+
+  document.getElementById('wxMetrics').innerHTML =
+    `<div class="wx-metric">
+      <div class="wx-metric-label">Marine Warnings</div>
+      <div class="wx-metric-value" style="font-size:12px;line-height:1.4">${warnHtml}</div>
+    </div>` +
+    cell('Conditions',    wmoDesc(wxCode),                                     '') +
+    cell('Wind Speed',    `<span style="color:${wsColor}">${kn(ws)}</span>`,   windSub) +
+    cell('Ocean Current', cv != null ? `${cv.toFixed(2)} kn` : '—',           curSub) +
+    cell('Wave Height',   n(waveH, 1, ' m'),                                   waveSub) +
+    cell('Swell Height',  n(swellH, 1, ' m'),                                  swellSub) +
+    cell('Air Temp',      n(airT, 1, '°C'),                                    feelsT != null ? `feels ${n(feelsT, 1, '°C')}` : '') +
+    cell('Sea Temp',      `<span style="color:var(--ok)">${n(sst, 1, '°C')}</span>`, '') +
+    cell('Visibility',    visKm,                                               '') +
+    cell('Pressure',      pressure != null ? Math.round(pressure) + ' hPa' : '—', '') +
+    cell('Humidity',      humidity != null ? Math.round(humidity) + '%' : '—', '') +
+    cell('Cloud Cover',   cloud != null ? Math.round(cloud) + '%' : '—',       '');
+}
+
+// ═══════════════════════════════════════════
+// TIDE DB HELPERS  (uses window.TIDE_DB from ../SAR-calculator/tide-db.js)
+// ═══════════════════════════════════════════
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const φ1 = lat1*Math.PI/180, φ2 = lat2*Math.PI/180;
+  const Δφ = (lat2-lat1)*Math.PI/180, Δλ = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function findNearestTideStation(lat, lon, maxKm = 150) {
+  if (!window.TIDE_DB) return null;
+  let best = null, bestDist = Infinity;
+  for (const [id, s] of Object.entries(TIDE_DB.stations)) {
+    const d = haversineKm(lat, lon, s.lat, s.lon);
+    if (d < bestDist) { bestDist = d; best = { ...s, id }; }
+  }
+  return bestDist <= maxKm ? { ...best, distKm: Math.round(bestDist) } : null;
+}
+
+function getANTTTides(station, nowMs, pastCount = 2, futureCount = 4) {
+  const epochMs = TIDE_DB.epoch_ms;
+  const toMs    = t => epochMs + t * 60000;
+  const stepMs  = 15 * 60000; // 15-min resolution for smooth curve
+
+  // Wide window to find all relevant extremes
+  const allExtremes = station.extremes
+    .map(([t, h, isHW]) => ({ ms: toMs(t), h, isHW: isHW === 1 }))
+    .filter(e => e.ms >= nowMs - 5*24*3600000 && e.ms <= nowMs + 5*24*3600000)
+    .sort((a, b) => a.ms - b.ms);
+
+  const pastExts   = allExtremes.filter(e => e.ms <  nowMs);
+  const futureExts = allExtremes.filter(e => e.ms >= nowMs);
+
+  const chartExts = [
+    ...pastExts.slice(-pastCount),
+    ...futureExts.slice(0, futureCount),
+  ];
+  if (chartExts.length < 2) return null;
+
+  // Span from 30 min before first to 30 min after last extreme
+  const chartStart = chartExts[0].ms - 30 * 60000;
+  const chartEnd   = chartExts[chartExts.length - 1].ms + 30 * 60000;
+  const nSteps     = Math.ceil((chartEnd - chartStart) / stepMs) + 1;
+
+  const times  = [];
+  const hourly = [];
+  for (let i = 0; i < nSteps; i++) {
+    const tMs = chartStart + i * stepMs;
+    times.push(new Date(tMs).toISOString());
+    let before = null, after = null;
+    for (const e of allExtremes) {
+      if (e.ms <= tMs) before = e;
+      else if (!after) after = e;
+    }
+    if (!before || !after) { hourly.push(null); continue; }
+    const progress = (tMs - before.ms) / (after.ms - before.ms);
+    const h = (before.h + after.h)/2 - (after.h - before.h)/2 * Math.cos(Math.PI * progress);
+    hourly.push(Math.round(h * 100) / 100);
+  }
+
+  const nowIdx = Math.round((nowMs - chartStart) / stepMs);
+  return { times, hourly, events: chartExts, nowIdx };
+}
+
+// ═══════════════════════════════════════════
+// TIDES
+// ═══════════════════════════════════════════
+function renderTides(lat, lon) {
+  const disclaimerEl = document.querySelector('.tide-disclaimer');
+  const headerEl    = document.getElementById('tide_header');
+
+  const station = findNearestTideStation(lat, lon);
+  if (station) {
+    const nowMs = Date.now();
+    const data  = getANTTTides(station, nowMs);
+    if (data) {
+      headerEl.textContent = `🌊 Tides · ${station.name} · ${station.distKm} km`;
+      disclaimerEl.textContent = `ANTT 2026 · LAT datum · Not for navigation`;
+
+      const extremes = data.events.map(e => ({ t: e.ms, h: e.h, isHW: e.isHW }));
+
+      const tryDraw = (attempt) => {
+        const tc = document.getElementById('tideChart');
+        if (!tc) return;
+        if (tc.offsetWidth > 0 && tc.offsetHeight > 0) {
+          drawTideChart(data.times, data.hourly, tc, extremes, data.nowIdx);
+        } else if (attempt < 10) {
+          setTimeout(() => tryDraw(attempt + 1), 50);
+        }
+      };
+      setTimeout(() => tryDraw(0), 80);
+      return;
+    }
+  }
+
+  // Fallback
+  headerEl.textContent = '🌊 Tides — Next 48 Hours';
+  disclaimerEl.textContent = window.TIDE_DB
+    ? '⚠ No tide station within 150 km'
+    : '⚠ tide-db.js not loaded — check ../SAR-calculator/tide-db.js';
+}
+
+// ── Pure Canvas tide chart — exact SAR-calc algorithm, Phase Zero bright palette ──
+function drawTideChart(times, heights, canvas, extremes, nowIdx) {
+  // Cache for resize redraws
+  const prev = canvas._tideData ?? {};
+  canvas._tideData = {
+    times:   times   ?? prev.times,
+    heights: heights ?? prev.heights,
+    extremes: extremes ?? prev.extremes,
+    nowIdx:  nowIdx  ?? prev.nowIdx ?? 0,
+  };
+  const { times: t, heights: v, extremes: tideExts, nowIdx: nIdx } = canvas._tideData;
+  if (!t || !v) return;
+
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+  if (W < 10 || H < 10) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const n = t.length;
+  const valid = v.filter(x => x !== null && isFinite(x));
+  if (!valid.length) return;
+
+  const scale = Math.max(0.72, Math.min(1.2, W / 480));
+  const fs  = Math.max(9, Math.round(11 * scale));
+  const pad = {
+    top:    Math.round(30 * scale),
+    right:  Math.max(6,  Math.round(10 * scale)),
+    bottom: Math.round(26 * scale),
+    left:   Math.max(26, Math.round(34 * scale)),
+  };
+  const cW = W - pad.left - pad.right;
+  const cH = H - pad.top - pad.bottom;
+
+  const minH = Math.min(...valid);
+  const maxH = Math.max(...valid);
+  const rng  = maxH - minH || 0.5;
+  const vMin = Math.max(0, minH - rng * 0.1);
+  const vMax = maxH + rng * 0.15;
+  const vRng = vMax - vMin;
+
+  const xAt = i => pad.left + (i / (n - 1)) * cW;
+  const yAt = val => pad.top + (1 - (val - vMin) / vRng) * cH;
+
+  // ── Background ──
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Vertical grid lines every 6 h ──
+  const seriesStepMs = n > 1 ? (new Date(t[1]).getTime() - new Date(t[0]).getTime()) : 3600000;
+  const gridEvery = Math.max(1, Math.round(6 * 3600000 / seriesStepMs));
+  ctx.strokeStyle = '#e8ecf0';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < n; i += gridEvery) {
+    ctx.beginPath(); ctx.moveTo(xAt(i), pad.top); ctx.lineTo(xAt(i), pad.top + cH); ctx.stroke();
+  }
+
+  // ── Past fill (light grey) ──
+  if (nIdx > 0) {
+    ctx.beginPath();
+    ctx.moveTo(xAt(0), yAt(v[0] ?? minH));
+    for (let i = 1; i <= nIdx && i < n; i++) {
+      if (v[i] !== null) ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.lineTo(xAt(Math.min(nIdx, n-1)), pad.top + cH);
+    ctx.lineTo(xAt(0), pad.top + cH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(160,175,190,0.12)';
+    ctx.fill();
+  }
+
+  // ── Future fill (ocean blue) ──
+  if (nIdx < n - 1) {
+    ctx.beginPath();
+    ctx.moveTo(xAt(nIdx), yAt(v[nIdx] ?? minH));
+    for (let i = nIdx + 1; i < n; i++) {
+      if (v[i] !== null) ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.lineTo(xAt(n - 1), pad.top + cH);
+    ctx.lineTo(xAt(nIdx),  pad.top + cH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(26,111,168,0.13)';
+    ctx.fill();
+  }
+
+  // ── Past curve (light grey) ──
+  if (nIdx > 0) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= nIdx && i < n; i++) {
+      if (v[i] === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(xAt(i), yAt(v[i])); started = true; }
+      else ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.strokeStyle = '#c0ccd8';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
+
+  // ── Future curve (ocean blue) ──
+  if (nIdx < n) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = nIdx; i < n; i++) {
+      if (v[i] === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(xAt(i), yAt(v[i])); started = true; }
+      else ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.strokeStyle = '#1a6fa8';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
+
+  // ── NOW marker (orange dashed) ──
+  const startMs = new Date(t[0]).getTime();
+  const endMs   = new Date(t[n - 1]).getTime();
+  if (nIdx >= 0 && nIdx < n) {
+    const nowX = xAt(nIdx);
+    ctx.strokeStyle = '#f77f00';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(nowX, pad.top); ctx.lineTo(nowX, pad.top + cH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f77f00';
+    ctx.font = `${fs}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText('NOW', nowX + 2, pad.top + Math.round(9 * scale));
+  }
+
+  // ── HW / LW markers ──
+  const drawHWLW = (extMs, extH, isHW) => {
+    const frac = (extMs - startMs) / (endMs - startMs);
+    const x = pad.left + frac * cW;
+    const y = yAt(extH);
+    const r = Math.max(2, Math.round(3 * scale));
+    ctx.fillStyle = isHW ? '#f01400' : '#4a82b8';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    const timeStr = new Date(extMs).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12: false });
+    const lbl1 = (isHW ? 'HW ' : 'LW ') + extH.toFixed(2) + 'm';
+    ctx.font = `${fs}px monospace`;
+    ctx.textAlign = 'center';
+    const halfMax = Math.max(ctx.measureText(lbl1).width, ctx.measureText(timeStr).width) / 2;
+    const safeX = Math.max(pad.left + halfMax, Math.min(pad.left + cW - halfMax, x));
+    const lineH = Math.round(11 * scale);
+    const bgPad = Math.round(2 * scale);
+    const lblW  = Math.max(ctx.measureText(lbl1).width, ctx.measureText(timeStr).width) + bgPad * 2 + 6;
+    const drawLabelPair = (topY) => {
+      const bgH = lineH * 2 + bgPad * 3;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.roundRect(safeX - lblW / 2, topY - bgPad, lblW, bgH, Math.round(3 * scale));
+      ctx.fill();
+      ctx.fillStyle = isHW ? '#c41000' : '#1a5a88';
+      ctx.fillText(lbl1,    safeX, topY + lineH * 0.8);
+      ctx.fillText(timeStr, safeX, topY + lineH * 0.8 + lineH + bgPad);
+    };
+    if (isHW) drawLabelPair(y - Math.round(26 * scale));
+    else       drawLabelPair(y + Math.round(6  * scale));
+  };
+
+  if (tideExts && tideExts.length > 0) {
+    for (const ext of tideExts) {
+      if (ext.t < startMs || ext.t > endMs) continue;
+      drawHWLW(ext.t, ext.h, ext.isHW);
+    }
+  }
+
+  // ── Time labels every 6 h ──
+  const labelEvery = Math.max(1, Math.round(6 * 3600000 / seriesStepMs));
+  ctx.fillStyle = '#7a8a96';
+  ctx.font = `${fs}px monospace`;
+  ctx.textAlign = 'center';
+  for (let i = 0; i < n; i += labelEvery) {
+    const d = new Date(t[i]);
+    ctx.fillText(d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:false }),
+                 xAt(i), pad.top + cH + Math.round(10 * scale));
+    ctx.fillText(d.toLocaleDateString([], { day:'2-digit', month:'short' }),
+                 xAt(i), pad.top + cH + Math.round(20 * scale));
+  }
+
+  // ── Y-axis labels ──
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#7a8a96';
+  ctx.font = `${fs}px monospace`;
+  for (let i = 0; i <= 3; i++) {
+    const val = vMin + (vRng / 3) * i;
+    ctx.fillText(val.toFixed(1), pad.left - 4, yAt(val) + 3);
+  }
+}
+
+
+// Redraw on resize
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('tideChart');
+  if (canvas?.parentElement && window.ResizeObserver) {
+    new ResizeObserver(() => { if (canvas._tideData) drawTideChart(null, null, canvas); }).observe(canvas.parentElement);
+  }
+});
+
+</script>
+</body>
+</html>
