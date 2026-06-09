@@ -4,9 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Phase Zero — Marine Weather</title>
+<meta name="theme-color" content="#111111">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Marine Wx">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="../SAR-calculator/tide-db.js"></script>
+<script src="tide-db.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap');
 
@@ -605,6 +613,10 @@ header h1 {
 </style>
 </head>
 <body>
+
+<div id="offlineBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#f01400;color:#fff;text-align:center;padding:6px 12px;font-size:13px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;">
+  ⚡ OFFLINE — showing last cached data
+</div>
 
 <header>
   <div class="logo"><img src="logo.png" alt="Phase Zero"></div>
@@ -1761,5 +1773,66 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 </script>
+
+<!-- ═══ PWA: Service Worker Registration + Offline / Cache ═══ -->
+<script>
+(function() {
+  // ── Service Worker ──────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(err => {
+        console.warn('SW registration failed:', err);
+      });
+    });
+  }
+
+  // ── Offline banner ──────────────────────────────────────────
+  const banner = document.getElementById('offlineBanner');
+  function updateOnlineStatus() {
+    if (!navigator.onLine) {
+      banner.style.display = 'block';
+      // Push header down so banner doesn't overlap
+      document.body.style.paddingTop = '32px';
+    } else {
+      banner.style.display = 'none';
+      document.body.style.paddingTop = '';
+    }
+  }
+  window.addEventListener('online',  updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
+
+  // ── Persist last fetched data to localStorage ───────────────
+  // Wrap renderAll to also save to localStorage after a successful fetch
+  const _origRenderAll = window.renderAll;
+  if (typeof _origRenderAll === 'function') {
+    window.renderAll = function(lat, lon, marine, wind, warnings) {
+      _origRenderAll.call(this, lat, lon, marine, wind, warnings);
+      try {
+        localStorage.setItem('mwd_last', JSON.stringify({
+          lat, lon,
+          marine: marine.current,
+          wind: wind.current,
+          warnings: warnings || [],
+          fetchTime: new Date().toISOString()
+        }));
+      } catch(e) {}
+    };
+  }
+
+  // ── Restore last fetch banner when offline ──────────────────
+  if (!navigator.onLine) {
+    try {
+      const saved = localStorage.getItem('mwd_last');
+      if (saved) {
+        const d = JSON.parse(saved);
+        const ago = Math.round((Date.now() - new Date(d.fetchTime)) / 60000);
+        banner.textContent = `⚡ OFFLINE — showing data from ${ago} min ago`;
+      }
+    } catch(e) {}
+  }
+})();
+</script>
+
 </body>
 </html>

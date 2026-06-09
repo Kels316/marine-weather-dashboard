@@ -40,22 +40,12 @@ Pure canvas chart from the ANTT 2026 tide database, showing 2 past and 4 future 
 | Wind, temperature, pressure, humidity, cloud, visibility | [Open-Meteo Forecast API](https://open-meteo.com/) |
 | Waves, swell, ocean current, sea surface temperature | [Open-Meteo Marine API](https://marine-api.open-meteo.com/) |
 | Marine warnings | [BOM Weather API](https://api.weather.bom.gov.au/) (no key required) |
-| Tide predictions | ANTT 2026 database (`tide-db.js` from SAR Calculator) |
+| Tide predictions | ANTT 2026 database (`tide-db.js` — bundled) |
 | Sun & moon times | Calculated client-side (NOAA solar algorithm) |
 
 ## Usage
 
-Open `index.html` directly in a browser. No build step or server required.
-
-The tide database is loaded from `../SAR-calculator/tide-db.js` — both repos should be cloned as siblings:
-
-```
-parent/
-├── SAR-calculator/
-│   └── tide-db.js
-└── marine-weather-dashboard/
-    └── index.html
-```
+Open `index.html` directly in a browser, or deploy to any static host (GitHub Pages, Netlify, etc.). No build step or server required. The tide database is bundled — no other repos needed.
 
 1. Tap the map or enter coordinates (decimal, DM, or DMS with hemisphere suffix)
 2. Press **Load Conditions**
