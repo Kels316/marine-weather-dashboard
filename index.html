@@ -92,6 +92,19 @@ header h1 {
   color: #666;
   letter-spacing: 1px;
 }
+.export-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--accent);
+  background: transparent;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.export-btn:hover { background: rgba(240,20,0,0.1); }
 
 /* ── LAYOUT ── */
 .app {
@@ -600,6 +613,7 @@ header h1 {
     <div class="header-sub">powered by Phase Zero</div>
   </div>
   <div class="header-right">
+    <button class="export-btn" id="exportBtn" onclick="printSummaryPDF()" style="display:none">⎙ Export</button>
     <span id="utcClock">—</span>
   </div>
 </header>
@@ -1091,6 +1105,11 @@ async function fetchBOMWarnings(lat, lon) {
 }
 
 // ═══════════════════════════════════════════
+// LAST DATA STORE — for PDF export
+// ═══════════════════════════════════════════
+let lastExportData = null;
+
+// ═══════════════════════════════════════════
 // RENDER ALL
 // ═══════════════════════════════════════════
 function renderAll(lat, lon, marine, wind, warnings) {
@@ -1102,10 +1121,14 @@ function renderAll(lat, lon, marine, wind, warnings) {
   document.getElementById('cond_time').textContent =
     'correct as at: ' + fetchTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 
+  lastExportData = { lat, lon, mc, wc, warnings, fetchTime: new Date() };
+
   renderWeatherPanel(mc, wc, warnings);
   showMapConditions(wc.wind_speed_10m, wc.wind_direction_10m, mc.ocean_current_velocity, mc.ocean_current_direction, wc.weather_code, lat, lon, wc.temperature_2m);
   renderSunMoon(lat, lon);
   renderTides(lat, lon);
+
+  document.getElementById('exportBtn').style.display = 'block';
 
   document.getElementById('results').style.display = 'block';
   document.getElementById('resultsPanel').scrollTop = 0;
@@ -1370,6 +1393,7 @@ function renderTides(lat, lon) {
     if (data) {
       headerEl.textContent = `🌊 Tides · ${station.name} · ${station.distKm} km`;
       disclaimerEl.textContent = `ANTT 2026 · LAT datum · Not for navigation`;
+      if (lastExportData) lastExportData.tides = { station, events: data.events };
 
       const extremes = data.events.map(e => ({ t: e.ms, h: e.h, isHW: e.isHW }));
 
@@ -1590,6 +1614,143 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
   }
 }
 
+
+// ═══════════════════════════════════════════
+// PDF EXPORT
+// ═══════════════════════════════════════════
+function fmtLatLonDec(lat, lon) {
+  const ns = lat >= 0 ? 'N' : 'S', ew = lon >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(5)}° ${ns}   ${Math.abs(lon).toFixed(5)}° ${ew}`;
+}
+function fmtLatLonDM(lat, lon) {
+  function dm(v, p, n) {
+    const h = v >= 0 ? p : n, a = Math.abs(v);
+    const d = Math.floor(a), m = ((a - d) * 60).toFixed(3).padStart(6,'0');
+    return `${String(d).padStart(3)} ° ${m}' ${h}`;
+  }
+  return `${dm(lat,'N','S')}   ${dm(lon,'E','W')}`;
+}
+
+function buildWeatherSummary() {
+  const d = lastExportData;
+  if (!d) return null;
+  const { lat, lon, mc, wc, warnings, fetchTime, tides } = d;
+  const fmt = t => t ? t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '—';
+  const n   = (v, dec, u) => (v != null && isFinite(v)) ? v.toFixed(dec) + u : 'N/A';
+
+  const sevLabel = {'strong wind':'STRONG WIND WARNING','gale':'GALE WARNING','storm force':'STORM FORCE WARNING','hurricane force':'HURRICANE FORCE WARNING','minor':'MARINE WIND WARNING','major':'MARINE WIND WARNING'};
+
+  // Warnings block
+  const marineWarns = (warnings ?? []).filter(w =>
+    /marine|coastal|wind|gale|storm|swell|sea|surf|flood|tsunami/i.test((w.short_title ?? '') + ' ' + (w.type ?? ''))
+  );
+  const warnLines = marineWarns.length > 0
+    ? marineWarns.map(w => `  ${sevLabel[w.severity] ?? w.short_title ?? 'MARINE WARNING'}`)
+    : ['  None active'];
+
+  // Tide extremes block
+  const tideLines = [];
+  if (tides) {
+    tideLines.push(`  Station  : ${tides.station.name}  (${tides.station.distKm} km)`);
+    for (const e of tides.events) {
+      const dt = new Date(e.ms);
+      const ts = dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) +
+                 '  ' + dt.toLocaleDateString([], {day:'2-digit', month:'short'});
+      tideLines.push(`  ${e.isHW ? 'HW' : 'LW'}       : ${e.h.toFixed(2)} m  ${ts}`);
+    }
+    tideLines.push('  (ANTT 2026 · LAT datum · Not for coastal navigation)');
+  } else {
+    tideLines.push('  No tide station within 150 km');
+  }
+
+  // Sun/moon block
+  const now = new Date();
+  const moon = getMoonPhase(now);
+  const sunFmt = (dep, rising) => { const t = calcSunTime(lat, lon, now, dep, rising); return t ? t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '—'; };
+
+  const ws = wc.wind_speed_10m, wd = wc.wind_direction_10m, wg = wc.wind_gusts_10m;
+  const windLine = `${ws != null ? Math.round(ws) + ' kn' : 'N/A'} from ${wd != null ? Math.round(wd) + '°T ' + degToCard(wd) : '—'}` +
+    (wg != null ? `  (gust ${Math.round(wg)} kn)` : '') +
+    (ws != null ? `  ${bfDesc(ws)}` : '');
+
+  const cv = mc.ocean_current_velocity, cd = mc.ocean_current_direction;
+  const curLine = `${cv != null ? cv.toFixed(2) + ' kn' : 'N/A'}${cd != null ? '  → ' + Math.round(cd) + '°T ' + degToCard(cd) : ''}`;
+
+  const swellH = mc.swell_wave_height, swellP = mc.swell_wave_period;
+  const swellDesc = (() => {
+    if (!swellH || !swellP) return '';
+    const T = swellP, h = swellH;
+    if (h < 2) return T < 11 ? 'Low swell, short/avg length' : 'Long, low swell';
+    const L = 1.56 * T * T;
+    if (h < 4) { if (L < 100) return 'Short swell, moderate height'; if (T >= 8 && T < 11) return 'Avg swell, moderate height'; return 'Long swell, moderate height'; }
+    if (L < 100) return 'Short heavy swell'; if (T >= 8 && T < 11) return 'Avg length heavy swell'; return 'Long heavy swell';
+  })();
+
+  const lines = [
+    '════════════════════════════════════════════',
+    '  MARINE WEATHER REPORT',
+    '════════════════════════════════════════════',
+    '',
+    `  Location  : ${fmtLatLonDM(lat, lon)}`,
+    `               ${fmtLatLonDec(lat, lon)}`,
+    `  Generated : ${fetchTime.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}  ${fetchTime.toLocaleDateString([],{day:'2-digit',month:'short',year:'numeric'})}`,
+    '',
+    '── MARINE WARNINGS ──────────────────────────',
+    ...warnLines,
+    '',
+    '── LIVE CONDITIONS ──────────────────────────',
+    `  Conditions : ${wmoDesc(wc.weather_code)}`,
+    `  Wind       : ${windLine}`,
+    `  Visibility : ${wc.visibility != null ? (wc.visibility/1000).toFixed(1) + ' km' : 'N/A'}`,
+    `  Current    : ${curLine}`,
+    `  Wave       : ${n(mc.wave_height,1,' m')}${mc.wave_direction != null ? '  from ' + Math.round(mc.wave_direction) + '°T ' + degToCard(mc.wave_direction) : ''}${mc.wave_period != null ? '  ' + Math.round(mc.wave_period) + ' s' : ''}`,
+    `  Sea state  : ${waveHeightToSeaState(mc.wave_height)}`,
+    `  Swell      : ${n(mc.swell_wave_height,1,' m')}${mc.swell_wave_direction != null ? '  from ' + Math.round(mc.swell_wave_direction) + '°T ' + degToCard(mc.swell_wave_direction) : ''}${mc.swell_wave_period != null ? '  ' + Math.round(mc.swell_wave_period) + ' s' : ''}${swellDesc ? '  · ' + swellDesc : ''}`,
+    `  Air temp   : ${n(wc.temperature_2m,1,' °C')}${wc.apparent_temperature != null ? '  (feels ' + wc.apparent_temperature.toFixed(1) + ' °C)' : ''}`,
+    `  Sea temp   : ${n(mc.sea_surface_temperature,1,' °C')}`,
+    `  Pressure   : ${wc.surface_pressure != null ? Math.round(wc.surface_pressure) + ' hPa' : 'N/A'}`,
+    `  Humidity   : ${wc.relative_humidity_2m != null ? Math.round(wc.relative_humidity_2m) + '%' : 'N/A'}`,
+    `  Cloud      : ${wc.cloud_cover != null ? Math.round(wc.cloud_cover) + '%' : 'N/A'}`,
+    '',
+    '── TIDES ────────────────────────────────────',
+    ...tideLines,
+    '',
+    '── SUN & MOON ───────────────────────────────',
+    `  Moon       : ${moon.name}  ${moon.illum}% illuminated`,
+    `  Astro      : ${sunFmt(18,true)} / ${sunFmt(18,false)}`,
+    `  Nautical   : ${sunFmt(12,true)} / ${sunFmt(12,false)}`,
+    `  Civil      : ${sunFmt(6,true)} / ${sunFmt(6,false)}`,
+    `  Sunrise/Set: ${sunFmt(0.8333,true)} / ${sunFmt(0.8333,false)}`,
+    '',
+    '════════════════════════════════════════════',
+    '  Phase Zero Marine Weather Dashboard',
+    '  Data: Open-Meteo · BOM · ANTT 2026',
+    '════════════════════════════════════════════',
+  ];
+  return lines.join('\n');
+}
+
+function printSummaryPDF() {
+  const summary = buildWeatherSummary();
+  if (!summary) return;
+  const escaped = summary.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const win = window.open('', '_blank', 'width=800,height=900');
+  win.document.write(`<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <title>Marine Weather Report</title>
+  <style>
+    body { font-family: 'Courier New', Courier, monospace; font-size: 10.5pt; line-height: 1.45; margin: 18mm 20mm; color: #000; }
+    pre  { white-space: pre; margin: 0; }
+    @page { size: A4 portrait; margin: 18mm 20mm; }
+    @media print { body { margin: 0; } }
+  </style>
+</head><body>
+<pre>${escaped}</pre>
+<script>window.addEventListener('load', function() { window.print(); });<\/script>
+</body></html>`);
+  win.document.close();
+}
 
 // Redraw on resize
 document.addEventListener('DOMContentLoaded', () => {
