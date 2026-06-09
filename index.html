@@ -449,6 +449,110 @@ header h1 span { color: var(--accent); }
 .warn-storm  { color: #d04000; }
 .warn-hurr   { color: #c00000; }
 
+/* ── LEAFLET ATTRIBUTION ── */
+.leaflet-control-attribution {
+  font-size: 8px !important;
+  opacity: 0.5;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 4px !important;
+}
+.leaflet-control-attribution:hover { opacity: 1; }
+
+/* ── MAP CONDITIONS OVERLAY ── */
+.map-cond-ctrl {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+.map-cond {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.map-cond-item {
+  padding: 4px 10px;
+  text-align: center;
+  min-width: 64px;
+}
+.map-cond-header {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #333;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  text-shadow: 0 1px 3px rgba(255,255,255,0.8);
+}
+.map-cond-arrow-wrap {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.map-cond-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: #111;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgba(255,255,255,0.9);
+}
+.map-cond-sub {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: #444;
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 3px rgba(255,255,255,0.8);
+}
+.map-cond-divider {
+  height: 1px;
+  background: rgba(0,0,0,0.1);
+  margin: 0 10px;
+}
+
+/* ── SUN & MOON PANEL ── */
+.sun-moon-top {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.moon-emoji { font-size: 24px; line-height: 1; }
+.moon-name  { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.moon-illum { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; }
+.sun-table  { width: 100%; border-collapse: collapse; }
+.sun-table thead th {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.sun-table thead th:nth-child(2) { text-align: center; }
+.sun-table thead th:nth-child(3) { text-align: right; }
+.sun-table tbody td {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.sun-table tbody tr:last-child td { border-bottom: none; }
+.sun-label { color: var(--label); font-size: 11px; }
+.sun-rise  { color: var(--accent2); text-align: center; }
+.sun-set   { color: var(--muted);   text-align: right; }
+.sun-table tbody tr.sun-highlight td { background: rgba(247,127,0,0.04); }
+.sun-table tbody tr.sun-highlight .sun-label { color: var(--text); font-weight: 600; }
+.sun-table tbody tr.sun-highlight .sun-rise  { color: var(--accent2); font-weight: 700; }
+.sun-table tbody tr.sun-highlight .sun-set   { color: #c0640a;        font-weight: 700; }
+
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -568,6 +672,12 @@ header h1 span { color: var(--accent); }
         <div class="tide-disclaimer">⚠ Modelled tidal data (MSL reference) · Not for coastal navigation</div>
       </div>
 
+      <!-- Sun & Moon -->
+      <div class="result-section">
+        <div class="result-section-header">☀ Sun &amp; Moon</div>
+        <div id="sunMoonPanel"></div>
+      </div>
+
     </div><!-- /results -->
   </div><!-- /results-panel -->
 
@@ -666,7 +776,7 @@ function placeMarker(lat, lon, zoom) {
   marker.on('drag', e => setCoords(e.latlng.lat, e.latlng.lng));
   marker.on('dragend', e => { setCoords(e.target.getLatLng().lat, e.target.getLatLng().lng); });
   setCoords(lat, lon);
-  map.setView([lat, lon], zoom ?? Math.max(map.getZoom(), 8));
+  map.setView([lat, lon], zoom ?? Math.max(map.getZoom(), 11));
 }
 
 function setCoords(lat, lon) {
@@ -688,6 +798,83 @@ function useMyLocation() {
 }
 
 document.addEventListener('DOMContentLoaded', initMap);
+
+// ── Map conditions overlay ──────────────────────────────────────────────────
+let mapCondEl = null;
+
+function arrowSVG(deg, color) {
+  return `<svg width="28" height="28" viewBox="0 0 28 28" style="transform:rotate(${deg}deg);transition:transform 0.6s cubic-bezier(0.34,1.2,0.64,1);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="14,2 17,21 14,17 11,21" fill="${color}"/>
+    <circle cx="14" cy="14" r="2.5" fill="${color}" opacity="0.6"/>
+  </svg>`;
+}
+
+function conditionsEmoji(wxCode, lat, lon) {
+  const now = new Date();
+  const rise = calcSunTime(lat, lon, now, 0.8333, true);
+  const set  = calcSunTime(lat, lon, now, 0.8333, false);
+  const isDay = rise && set && now >= rise && now <= set;
+
+  if (!isDay) return getMoonPhase(now).emoji;
+
+  if (wxCode === null || wxCode === undefined) return '🌡️';
+  if (wxCode === 0)                return '☀️';
+  if (wxCode === 1)                return '🌤️';
+  if (wxCode === 2)                return '⛅';
+  if (wxCode === 3)                return '☁️';
+  if (wxCode <= 48)                return '🌫️';   // fog
+  if (wxCode <= 55)                return '🌦️';   // drizzle
+  if (wxCode <= 65)                return '🌧️';   // rain
+  if (wxCode <= 77)                return '❄️';   // snow
+  if (wxCode <= 82)                return '🌦️';   // showers
+  if (wxCode <= 86)                return '🌨️';   // snow showers
+  return '⛈️';                                    // thunderstorm
+}
+
+function showMapConditions(windSpd, windFrom, currentSpd, currentDir, wxCode, lat, lon, airTemp) {
+  if (!mapCondEl) {
+    mapCondEl = document.createElement('div');
+    mapCondEl.className = 'map-cond-ctrl';
+    mapCondEl.style.cssText = 'position:absolute;top:50%;right:4px;transform:translateY(-50%);z-index:500;';
+    document.getElementById('map').appendChild(mapCondEl);
+  }
+
+  const el = mapCondEl;
+
+  // Wind arrow points where wind blows TO (from + 180)
+  const windDeg    = windFrom  != null ? (windFrom + 180) % 360 : 0;
+  const curDeg     = currentDir != null ? currentDir : 0;
+  const windColor  = windSpd != null ? bfColor(windSpd) : 'rgba(255,255,255,0.5)';
+  const curColor   = '#4a9fd4';
+
+  const windVal  = windSpd    != null ? `${Math.round(windSpd)} kn`       : '—';
+  const windSub  = windFrom   != null ? `FROM ${degToCard(windFrom)}`      : '—';
+  const curVal   = currentSpd != null ? `${currentSpd.toFixed(2)} kn`     : '—';
+  const curSub   = currentDir != null ? `TO ${degToCard(currentDir)}`      : '—';
+
+  const emoji = conditionsEmoji(wxCode, lat, lon);
+
+  el.innerHTML = `<div class="map-cond">
+    <div class="map-cond-item" style="padding-top:2px;padding-bottom:2px">
+      <div style="font-size:26px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.25));margin-bottom:3px;margin-top:-4px">${emoji}</div>
+      <div class="map-cond-val">${airTemp != null ? airTemp.toFixed(1) + '°C' : '—'}</div>
+    </div>
+    <div class="map-cond-divider"></div>
+    <div class="map-cond-item">
+      <div class="map-cond-header">Wind</div>
+      <div class="map-cond-arrow-wrap">${windFrom != null ? arrowSVG(windDeg, windColor) : '<span style="color:rgba(255,255,255,0.2);font-size:20px">—</span>'}</div>
+      <div class="map-cond-val" style="color:${windColor}">${windVal}</div>
+      <div class="map-cond-sub">${windSub}</div>
+    </div>
+    <div class="map-cond-divider"></div>
+    <div class="map-cond-item">
+      <div class="map-cond-header">Current</div>
+      <div class="map-cond-arrow-wrap">${currentDir != null ? arrowSVG(curDeg, curColor) : '<span style="color:rgba(255,255,255,0.2);font-size:20px">—</span>'}</div>
+      <div class="map-cond-val">${curVal}</div>
+      <div class="map-cond-sub">${curSub}</div>
+    </div>
+  </div>`;
+}
 
 // ═══════════════════════════════════════════
 // UI HELPERS
@@ -907,6 +1094,8 @@ function renderAll(lat, lon, marine, wind, warnings) {
     'correct as at: ' + fetchTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 
   renderWeatherPanel(mc, wc, warnings);
+  showMapConditions(wc.wind_speed_10m, wc.wind_direction_10m, mc.ocean_current_velocity, mc.ocean_current_direction, wc.weather_code, lat, lon, wc.temperature_2m);
+  renderSunMoon(lat, lon);
   renderTides(lat, lon);
 
   document.getElementById('results').style.display = 'block';
@@ -1005,6 +1194,91 @@ function renderWeatherPanel(mc, wc, warnings) {
     cell('Pressure',      pressure != null ? Math.round(pressure) + ' hPa' : '—', '') +
     cell('Humidity',      humidity != null ? Math.round(humidity) + '%' : '—', '') +
     cell('Cloud Cover',   cloud != null ? Math.round(cloud) + '%' : '—',       '');
+}
+
+// ═══════════════════════════════════════════
+// SUN & MOON
+// ═══════════════════════════════════════════
+function toJulianDay(date) {
+  return date.getTime() / 86400000 + 2440587.5;
+}
+
+// NOAA sunrise equation.  depression = degrees below horizon (positive).
+// Returns local Date or null (circumpolar).
+function calcSunTime(lat, lon, date, depression, rising) {
+  const JD  = toJulianDay(date);
+  const lw  = -lon;
+  const n   = Math.round(JD - 2451545 - 0.0009 - lw / 360);
+  const Js  = 2451545 + 0.0009 + lw / 360 + n;
+  const M   = (357.5291 + 0.98560028 * (Js - 2451545)) % 360;
+  const Mr  = M * Math.PI / 180;
+  const C   = 1.9148*Math.sin(Mr) + 0.0200*Math.sin(2*Mr) + 0.0003*Math.sin(3*Mr);
+  const λ   = ((M + C + 180 + 102.9372) % 360) * Math.PI / 180;
+  const Jt  = Js + 0.0053*Math.sin(Mr) - 0.0069*Math.sin(2*λ);
+  const δ   = Math.asin(Math.sin(λ) * Math.sin(23.4397 * Math.PI / 180));
+  const h0  = -Math.abs(depression) * Math.PI / 180;
+  const φ   = lat * Math.PI / 180;
+  const cosω = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
+  if (cosω < -1 || cosω > 1) return null;
+  const ω   = Math.acos(cosω) * 180 / Math.PI;
+  const Jx  = Jt + (rising ? -ω/360 : ω/360);
+  return new Date((Jx - 2440587.5) * 86400000);
+}
+
+function getMoonPhase(date) {
+  const JD     = toJulianDay(date);
+  const known  = 2451550.1;       // Jan 6 2000 — known new moon
+  const period = 29.53059;
+  const age    = ((JD - known) % period + period) % period;
+  const norm   = age / period;    // 0–1 through lunar cycle
+  const illum  = Math.round((1 - Math.cos(norm * 2 * Math.PI)) / 2 * 100);
+  const phases = [
+    [0.0625, 'New Moon',        '🌑'],
+    [0.1875, 'Waxing Crescent', '🌒'],
+    [0.3125, 'First Quarter',   '🌓'],
+    [0.4375, 'Waxing Gibbous',  '🌔'],
+    [0.5625, 'Full Moon',       '🌕'],
+    [0.6875, 'Waning Gibbous',  '🌖'],
+    [0.8125, 'Last Quarter',    '🌗'],
+    [0.9375, 'Waning Crescent', '🌘'],
+    [1.0001, 'New Moon',        '🌑'],
+  ];
+  const [, name, emoji] = phases.find(([t]) => norm < t);
+  return { norm, name, emoji, illum };
+}
+
+function renderSunMoon(lat, lon) {
+  const now = new Date();
+  const fmt = d => d ? d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '—';
+  const moon = getMoonPhase(now);
+
+  const rows = [
+    { label: 'Astronomical', rise: calcSunTime(lat, lon, now, 18,     true), set: calcSunTime(lat, lon, now, 18,     false), highlight: false },
+    { label: 'Nautical',     rise: calcSunTime(lat, lon, now, 12,     true), set: calcSunTime(lat, lon, now, 12,     false), highlight: false },
+    { label: 'Civil',        rise: calcSunTime(lat, lon, now,  6,     true), set: calcSunTime(lat, lon, now,  6,     false), highlight: false },
+    { label: 'Sunrise / Sunset', rise: calcSunTime(lat, lon, now, 0.8333, true), set: calcSunTime(lat, lon, now, 0.8333, false), highlight: true  },
+  ];
+
+  document.getElementById('sunMoonPanel').innerHTML = `
+    <div class="sun-moon-top">
+      <span class="moon-emoji">${moon.emoji}</span>
+      <span class="moon-name">${moon.name}</span>
+      <span class="moon-illum">${moon.illum}% illuminated</span>
+    </div>
+    <table class="sun-table">
+      <thead><tr>
+        <th></th>
+        <th>Dawn / Rise</th>
+        <th>Dusk / Set</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr${r.highlight ? ' class="sun-highlight"' : ''}>
+          <td class="sun-label">${r.label}</td>
+          <td class="sun-rise">${fmt(r.rise)}</td>
+          <td class="sun-set">${fmt(r.set)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
 }
 
 // ═══════════════════════════════════════════
