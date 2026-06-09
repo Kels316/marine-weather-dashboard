@@ -1,6 +1,6 @@
 {
   "name": "Marine Weather Dashboard",
-  "short_name": "Marine Wx",
+  "short_name": "Weather",
   "description": "Live marine weather conditions — Phase Zero",
   "start_url": "./index.html",
   "display": "standalone",
