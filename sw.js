@@ -4,7 +4,7 @@
 // API calls   → network-first with offline fallback
 // tiles/CDN   → network-first
 
-const CACHE_NAME = 'mwd-v2';
+const CACHE_NAME = 'mwd-v3';
 
 const API_ORIGINS = [
   'https://api.open-meteo.com',
