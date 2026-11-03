@@ -793,7 +793,7 @@ setInterval(tickClock, 1000); tickClock();
 let map, marker;
 
 function initMap() {
-  map = L.map('map', { zoomControl: true }).setView([-27.47, 153.02], 5);
+  map = L.map('map', { zoomControl: true }).setView([-26.3855, 153.0638], 12);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19
@@ -828,7 +828,13 @@ function useMyLocation() {
       const { latitude: lat, longitude: lon } = pos.coords;
       placeMarker(lat, lon, 10);
     },
-    err => showError('Could not get location: ' + err.message)
+    err => {
+      if (err.code === err.PERMISSION_DENIED) {
+        placeMarker(-26.3855, 153.0638, 12);
+      } else {
+        showError('Could not get location: ' + err.message);
+      }
+    }
   );
 }
 
