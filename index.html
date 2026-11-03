@@ -752,8 +752,13 @@ header h1 {
 </div><!-- /app -->
 
 <script>
-// Force light theme when embedded in an iframe (e.g. SharePoint)
-if (window.self !== window.top) {
+// Force light theme when embedded in a cross-origin iframe (e.g. SharePoint)
+try {
+  if (window.self !== window.top) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+} catch (e) {
+  // Cross-origin iframe — window.top is inaccessible, so we're definitely embedded
   document.documentElement.setAttribute('data-theme', 'light');
 }
 
