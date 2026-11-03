@@ -752,6 +752,11 @@ header h1 {
 </div><!-- /app -->
 
 <script>
+// Force light theme when embedded in an iframe (e.g. SharePoint)
+if (window.self !== window.top) {
+  document.documentElement.setAttribute('data-theme', 'light');
+}
+
 // ═══════════════════════════════════════════
 // PARSE LAT/LON  — exact copy from SAR calculator
 // ═══════════════════════════════════════════
