@@ -676,7 +676,6 @@ header h1 {
       <!-- Step 1: Location -->
       <div class="step open" id="step1">
         <div class="step-header" onclick="toggleStep('step1')">
-          <div class="step-num">1</div>
           <div class="step-title">Location</div>
           <div class="step-chevron">▼</div>
         </div>
@@ -724,7 +723,7 @@ header h1 {
 
       <!-- Live Conditions (wx metrics) -->
       <div class="result-section">
-        <div class="result-section-header">◎ Live Conditions
+        <div class="result-section-header">Live Conditions
           <span id="cond_time" style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;letter-spacing:0.5px"></span>
         </div>
         <div id="wxMetrics">
@@ -734,7 +733,7 @@ header h1 {
 
       <!-- Tides -->
       <div class="result-section">
-        <div class="result-section-header" id="tide_header">🌊 Tides — Next 48 Hours</div>
+        <div class="result-section-header" id="tide_header">Tides — Next 48 Hours</div>
         <div class="chart-wrap">
           <canvas id="tideChart"></canvas>
         </div>
@@ -743,7 +742,7 @@ header h1 {
 
       <!-- Sun & Moon -->
       <div class="result-section">
-        <div class="result-section-header">☀ Sun &amp; Moon</div>
+        <div class="result-section-header">Sun &amp; Moon</div>
         <div id="sunMoonPanel"></div>
       </div>
 
@@ -1443,7 +1442,7 @@ function renderTides(lat, lon) {
     const nowMs = Date.now();
     const data  = getANTTTides(station, nowMs);
     if (data) {
-      headerEl.textContent = `🌊 Tides · ${station.name} · ${station.distKm} km`;
+      headerEl.textContent = `Tides · ${station.name} · ${station.distKm} km`;
       disclaimerEl.textContent = `ANTT 2026 · LAT datum · Not for navigation`;
       if (lastExportData) lastExportData.tides = { station, events: data.events };
 
@@ -1464,7 +1463,7 @@ function renderTides(lat, lon) {
   }
 
   // Fallback
-  headerEl.textContent = '🌊 Tides — Next 48 Hours';
+  headerEl.textContent = 'Tides — Next 48 Hours';
   disclaimerEl.textContent = window.TIDE_DB
     ? '⚠ No tide station within 150 km'
     : '⚠ tide-db.js not loaded — check ../SAR-calculator/tide-db.js';
