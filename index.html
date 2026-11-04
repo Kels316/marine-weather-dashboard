@@ -842,6 +842,13 @@ function initMap() {
     maxZoom: 19
   }).addTo(map);
   map.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
+
+  // Auto-load default location when embedded in an iframe
+  const inIframe = (() => { try { return window.self !== window.top; } catch(e) { return true; } })();
+  if (inIframe) {
+    placeMarker(-26.39333, 153.07466);
+    setTimeout(loadData, 500);
+  }
 }
 
 function placeMarker(lat, lon, zoom) {
